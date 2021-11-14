@@ -15,8 +15,9 @@ class SearchType(str, Enum):
 
 
 class TextSearchModel():
-    def __init__(self, entries, corpus_embeddings, bi_encoder, cross_encoder, top_k, verbose):
+    def __init__(self, entries, index, corpus_embeddings, bi_encoder, cross_encoder, top_k, verbose):
         self.entries = entries
+        self.index = index
         self.corpus_embeddings = corpus_embeddings
         self.bi_encoder = bi_encoder
         self.cross_encoder = cross_encoder

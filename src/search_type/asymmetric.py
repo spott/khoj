@@ -11,8 +11,10 @@ import argparse
 import pathlib
 
 # External Packages
+import faiss
 import torch
-from sentence_transformers import SentenceTransformer, CrossEncoder, util
+import numpy as np
+from sentence_transformers import SentenceTransformer, CrossEncoder
 
 # Internal Packages
 from src.utils.helpers import get_absolute_path, resolve_absolute_path
@@ -66,6 +68,25 @@ def compute_embeddings(entries, bi_encoder, embeddings_file, regenerate=False, v
     return corpus_embeddings
 
 
+def compute_index(corpus_embeddings, embeddings_file, regenerate=False, verbose=0):
+    "Create (and Save) or Load Faiss index for cosine similarity with ID to speed up retrieval"
+    # Replace embeddings file extension with .index
+    index_file = f"{embeddings_file}".replace(".pt", ".index")
+
+    # Load pre-computed index from file if exists
+    if resolve_absolute_path(index_file).exists() and not regenerate:
+        index = faiss.read_index(get_absolute_path(index_file))
+    else: # Else create index and save to file
+        index = faiss.IndexIDMap(faiss.IndexFlatIP(corpus_embeddings.shape[1]))
+        index.add_with_ids(corpus_embeddings.numpy(), np.array(range(len(corpus_embeddings))))
+
+        faiss.write_index(index, get_absolute_path(index_file))
+        if verbose > 0:
+            print(f"Saved index to {index_file}")
+
+    return index
+
+
 def query(raw_query: str, model: TextSearchModel):
     "Search all notes for entries that answer the query"
     # Separate natural query from explicit required, blocked words filters
@@ -74,11 +95,15 @@ def query(raw_query: str, model: TextSearchModel):
     blocked_words = set([word[1:].lower() for word in raw_query.split() if word.startswith("-")])
 
     # Encode the query using the bi-encoder
-    question_embedding = model.bi_encoder.encode(query, convert_to_tensor=True)
+    question_embedding = model.bi_encoder.encode([query])
 
-    # Find relevant entries for the query
-    hits = util.semantic_search(question_embedding, model.corpus_embeddings, top_k=model.top_k)
-    hits = hits[0]  # Get the hits for the first query
+    # Find relevant entries for the query using FAISS index
+    search_hits = model.index.search(question_embedding, model.top_k)
+
+    # Collate corpus_ids, scores of results into dictionary
+    hits = [{'corpus_id': search_hits[1][0][idx],
+             'score': search_hits[0][0][idx]}
+             for idx in range(model.top_k)]
 
     # Filter results using explicit filters
     hits = explicit_filter(hits,
@@ -165,7 +190,10 @@ def setup(config: TextSearchConfig, regenerate: bool) -> TextSearchModel:
     # Compute or Load Embeddings
     corpus_embeddings = compute_embeddings(entries, bi_encoder, config.embeddings_file, regenerate=regenerate, verbose=config.verbose)
 
-    return TextSearchModel(entries, corpus_embeddings, bi_encoder, cross_encoder, top_k, verbose=config.verbose)
+    # Compute or Load Index for Faster Retrieval
+    index = compute_index(corpus_embeddings, config.embeddings_file, regenerate=regenerate, verbose=config.verbose)
+
+    return TextSearchModel(entries, index, corpus_embeddings, bi_encoder, cross_encoder, top_k, verbose=config.verbose)
 
 
 if __name__ == '__main__':
