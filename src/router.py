@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from src.configure import configure_search
 from src.search_type import image_search, text_search
 from src.processor.conversation.gpt import converse, extract_search_type, message_to_log, message_to_prompt, understand, summarize
-from src.processor.conversation.local_chat import answer
+from src.processor.conversation import local_chat
 from src.search_filter.explicit_filter import ExplicitFilter
 from src.search_filter.date_filter import DateFilter
 from src.utils.rawconfig import FullConfig
@@ -185,20 +185,21 @@ def chat(q: str):
 
 
 @router.get('/beta/answer')
-def chat(q: str, t: Optional[SearchType] = SearchType.Org):
+def answer(q: str, t: Optional[SearchType] = SearchType.Org):
     # Search for most relevant entries
     search_start = time.time()
     result_list = search(q, n=1, t=t, r=True)
     search_end = time.time()
 
     # Collate cleaned results
-    collated_result = "\n".join([re.sub(r'\[|\]', '', item["compiled"]) for item in result_list])
+    raw_search_results = "\n".join([item["entry"] for item in result_list])
+    cleaned_search_results = "\n".join([re.sub(r'\[|\]', '', item["compiled"]) for item in result_list])
     if state.verbose > 1:
-        print(f'Semantically Similar Notes:\n{collated_result}')
+        print(f'Semantically Similar Notes:\n{cleaned_search_results}')
 
     # Extract answer from the most relevant entries
     answer_start = time.time()
-    response = answer(q, collated_result)
+    response = local_chat.answer(q, cleaned_search_results)
     answer_end = time.time()
 
     if state.verbose > 1:
@@ -207,7 +208,7 @@ def chat(q: str, t: Optional[SearchType] = SearchType.Org):
         if answer_start and answer_end:
             print(f"Answer took {answer_end - answer_start:.3f} seconds")
 
-    return {'status': 'ok', 'response': response["answer"], 'score': response["score"]}
+    return {'answer': response["answer"], 'score': response["score"], 'context': raw_search_results}
 
 
 @router.on_event('shutdown')
