@@ -188,7 +188,7 @@ def chat(q: str):
 def chat(q: str, t: Optional[SearchType] = SearchType.Org):
     # Search for most relevant entries
     search_start = time.time()
-    result_list = search(q, n=3, t=t)
+    result_list = search(q, n=1, t=t, r=True)
     search_end = time.time()
 
     # Collate cleaned results
