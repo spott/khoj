@@ -185,12 +185,28 @@ def chat(q: str):
 
 
 @router.get('/beta/answer')
-def chat(q: str):
-    result_list = search(q, n=3, t=SearchType.Org)
-    collated_result = "\n".join([re.sub(r'\[|\]', ' ', item["compiled"]) for item in result_list])
+def chat(q: str, t: Optional[SearchType] = SearchType.Org):
+    # Search for most relevant entries
+    search_start = time.time()
+    result_list = search(q, n=3, t=t)
+    search_end = time.time()
+
+    # Collate cleaned results
+    collated_result = "\n".join([re.sub(r'\[|\]', '', item["compiled"]) for item in result_list])
     if state.verbose > 1:
         print(f'Semantically Similar Notes:\n{collated_result}')
+
+    # Extract answer from the most relevant entries
+    answer_start = time.time()
     response = answer(q, collated_result)
+    answer_end = time.time()
+
+    if state.verbose > 1:
+        if search_start and search_end:
+            print(f"Search took {search_end - search_start:.3f} seconds")
+        if answer_start and answer_end:
+            print(f"Answer took {answer_end - answer_start:.3f} seconds")
+
     return {'status': 'ok', 'response': response["answer"], 'score': response["score"]}
 
 
