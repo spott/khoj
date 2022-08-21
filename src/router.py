@@ -7,8 +7,7 @@ from typing import Optional
 from functools import lru_cache
 
 # External Packages
-from fastapi import APIRouter
-from fastapi import Request
+from fastapi import Request, APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 
@@ -186,6 +185,12 @@ def chat(q: str):
 
 @router.get('/beta/answer')
 def answer(q: str, t: Optional[SearchType] = SearchType.Org):
+    # Mark Image Search as Not Supported
+    if t == SearchType.Image:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail='Image search is not supported by the question answering API at this time.')
+
     # Search for most relevant entries
     search_start = time.time()
     result_list = search(q, n=1, t=t, r=True)
