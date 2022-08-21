@@ -1,4 +1,5 @@
 # Standard Packages
+import re
 import yaml
 import json
 import time
@@ -15,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from src.configure import configure_search
 from src.search_type import image_search, text_search
 from src.processor.conversation.gpt import converse, extract_search_type, message_to_log, message_to_prompt, understand, summarize
+from src.processor.conversation.local import answer
 from src.search_filter.explicit_filter import ExplicitFilter
 from src.search_filter.date_filter import DateFilter
 from src.utils.rawconfig import FullConfig
@@ -180,6 +182,16 @@ def chat(q: str):
     state.processor_config.conversation.meta_log['chat'] = message_to_log(q, metadata, gpt_response, meta_log.get('chat', []))
 
     return {'status': 'ok', 'response': gpt_response}
+
+
+@router.get('/beta/answer')
+def chat(q: str):
+    result_list = search(q, n=3, t=SearchType.Org)
+    collated_result = "\n".join([re.sub(r'\[|\]', ' ', item["compiled"]) for item in result_list])
+    if state.verbose > 1:
+        print(f'Semantically Similar Notes:\n{collated_result}')
+    response = answer(q, collated_result)
+    return {'status': 'ok', 'response': response["answer"], 'score': response["score"]}
 
 
 @router.on_event('shutdown')

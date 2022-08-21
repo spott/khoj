@@ -161,6 +161,7 @@ def collate_results(hits, entries, count=5):
     return [
         {
             "entry": entries[hit['corpus_id']]['raw'],
+            "compiled": entries[hit['corpus_id']]['compiled'],
             "score": f"{hit['cross-score'] if 'cross-score' in hit else hit['score']:.3f}"
         }
         for hit
