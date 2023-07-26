@@ -1,6 +1,7 @@
 # Standard Packages
 import concurrent.futures
 import math
+import os
 import time
 import yaml
 import logging
@@ -9,7 +10,10 @@ from typing import Iterable, List, Optional, Union
 
 # External Packages
 from fastapi import APIRouter, HTTPException, Header, Request
+from fastapi.params import Form
 from sentence_transformers import util
+from twilio.twiml.messaging_response import MessagingResponse
+from twilio.request_validator import RequestValidator
 
 # Internal Packages
 from khoj.configure import configure_processor, configure_server
@@ -582,6 +586,50 @@ def chat_history(
     )
 
     return {"status": "ok", "response": meta_log.get("chat", [])}
+
+
+@api.post("/chat")
+async def chat_whatsapp(request: Request, From: str = Form(...), Body: str = Form(...)):
+    # Initialize Variables
+    q = Body
+    n = 5
+
+    # Validate Request from Twilio
+    validator = RequestValidator(os.getenv("TWILIO_AUTH_TOKEN"))
+    form_ = await request.form()
+    if not validator.validate(str(request.url), form_, request.headers.get("X-Twilio-Signature", "")):
+        logger.error("Error in Twilio Signature")
+        raise HTTPException(status_code=400, detail="Error in Twilio Signature")
+
+    perform_chat_checks()
+    compiled_references, inferred_queries = await extract_references_and_questions(request, q, (n or 5))
+
+    # Get the (streamed) chat response from GPT.
+    gpt_response = generate_chat_response(
+        q,
+        meta_log=state.processor_config.conversation.meta_log,
+        compiled_references=compiled_references,
+        inferred_queries=inferred_queries,
+    )
+    if gpt_response is None:
+        return Response(content=gpt_response, media_type="text/plain", status_code=500)
+
+    # Get the full response from the generator if the stream is not requested.
+    aggregated_gpt_response = ""
+    while True:
+        try:
+            aggregated_gpt_response += next(gpt_response)
+        except StopIteration:
+            break
+
+    actual_response = aggregated_gpt_response.split("### compiled references:")[0]
+
+    # response_obj = {"response": actual_response, "context": compiled_references}
+
+    twilioResponse = MessagingResponse()
+    twilioResponse.message(actual_response)
+
+    return Response(content=str(twilioResponse), media_type="application/xml")
 
 
 @api.get("/chat", response_class=Response)
